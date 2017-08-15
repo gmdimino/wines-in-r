@@ -1,0 +1,409 @@
+---
+title: "Investigating the Wine dataset"
+output:
+  html_document: default
+  toc: true
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Intro
+
+```{r Prep work}
+# install.packages('ggplot2')
+library(ggplot2)
+# install.packages('ggthemes')
+library(ggthemes)
+# install.packages('car')
+library('car')
+# install.packages("ggcorrplot")
+library(ggcorrplot)
+library(gridExtra)
+
+setwd("/Users/gdimino/r_stuff")
+
+reds <- read.csv("wineQualityReds.csv")
+whites <- read.csv("wineQualityWhites.csv")
+
+# Create combined dataset
+
+temp_reds <- reds
+temp_whites <- whites
+temp_reds['type'] <- "red"
+temp_whites['type'] <- "white"
+
+# create combined dataset
+all <- rbind(temp_reds, temp_whites)
+
+```
+
+### Examining the red wine data
+
+```{r red_wine_data}
+head(reds)
+dim(reds)
+```
+
+### Univariate analysis
+
+#### Quality histogram
+
+The first thing is to look at the distribution of wines vs. quality.  We see roughly normal distribution, perhaps slightly skewed.In particular, there are very few wines in the highest quality bins.  This makes sense, since high-quality wines are relatively rare and difficult to create.
+
+```{r red_quality_histo, echo=FALSE}
+
+ggplot(data=reds, aes(reds$quality)) + 
+  geom_histogram(binwidth=1,
+                 col="grey",
+                 fill="red4") +
+   theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x=element_blank()) +
+  scale_x_continuous(breaks = seq(3,10,1), lim = c(3,10)) +
+  labs(title="Red wine quality histogram") +
+  labs(x="Quality", y="Count")
+  
+  
+
+```
+
+
+#### Feature boxplots
+
+Next, we'll look at the distributions for each of the chemical properties of wine, as sorted by quality.  This should give us a good idea of how each property varies with wine quality.  
+ 
+
+
+
+```{r feature_boxplots, echo=FALSE}
+
+doPlot = function(mydata, Value, name) {
+   ggobj = ggplot(data=mydata,
+                  aes(x=quality, y=Value, group=quality)) + 
+     geom_boxplot() +
+     ggtitle(paste(name, ": distributions by quality", sep="")) +
+     theme_few() +
+     scale_colour_few() +
+     xlab("Quality") + 
+     ylab(name)
+   print(ggobj)
+}
+
+```
+
+##### Fixed acidity
+
+The median of the fixed acidity increases with wine quality, though there are a number of outliers with large fixed acidity in the middle quality bins.  Of course, there are a lot more samples in those bins.
+
+```{r boxplot_fixed_acidity, echo=FALSE}
+  doPlot(reds,reds$fixed.acidity, "Fixed Acidity")
+```
+
+##### Volatile acidity
+
+Here, the relationship is pretty clear. The low quality wines have a high median volatile acidity, whereas high-quality wines have much less.  
+Volatile acidity measures acetic acid (vinegar) and other impurities, so this relationship makes sense.
+
+```{r boxplot_volatile_acidity, echo=FALSE}
+  doPlot(reds,reds$volatile.acidity, "Volatile Acidity")
+```
+
+##### Citric acid
+
+Median citric acid increases with wine quality, although there seem to be a bunch of outliers in quality bin 7. Possible measurement error?
+
+```{r boxplot_citric_acid, echo=FALSE}  
+  doPlot(reds,reds$citric.acid, "Citric Acid")
+```
+
+##### Residual sugar
+
+Residual sugar seems to be roughly equivalent for the different quality bins, although far outliers in the middle bins make the scale hard to read.
+
+```{r boxplot_residual_sugar, echo=FALSE} 
+  doPlot(reds,reds$residual.sugar, "Residual Sugar")
+```
+
+
+##### Chlorides
+
+There appears trend of decreasing chlorides in the higher quality bins, but this is a bit obscured by a number of far outliers that affect the scale.  
+
+```{r boxplot_chlorides, echo=FALSE}  
+  doPlot(reds,reds$chlorides, "Chlorides")
+```
+
+##### Free sulfur dioxide
+
+Median largest in the mid-quality wines, lower at each extreme.  Outliers less extreme than the previous two.
+  
+```{r boxplot_free_sulfur_dioxide, echo=FALSE}  
+  doPlot(reds,reds$free.sulfur.dioxide, "Free Sulfur Dioxide")
+```
+
+##### Total sulfur dioxide
+
+Free sulfur dioxide has a similar profile to total sulfur dioxide. Might be good to look for a correlation here.
+
+```{r boxplot_total_sulfur_dioxide, echo=FALSE}  
+  doPlot(reds,reds$total.sulfur.dioxide, "Total Sulfur Dioxide")
+```
+
+##### Density
+
+Median density declines with wine quality, especially in the highest bins.
+
+```{r boxplot_density, echo=FALSE}  
+  doPlot(reds,reds$density, "Density")
+```
+
+##### pH
+
+Menian pH also declines with wine quality, but the ranges are similar.
+
+```{r boxplot_pH, echo=FALSE}  
+  doPlot(reds,reds$pH, "pH")
+```
+
+##### Sulphates
+
+Just when you were getting bored, here;s another clear relationship. Median sulphates increase with increasing quality.
+```{r boxplot_sulphates, echo=FALSE}  
+
+  doPlot(reds,reds$sulphates, "Sulphates")
+```
+
+##### Alcohol
+
+Low quality wines have a relatively low alcohol content, but this goes up in bins 6 and above.  A low alcohol level could be a symptom of wine going to vinegar, couldn't it (although there could be other factors).  Good to check for correlation to volatile acidity.  
+
+
+```{r boxplot_alcohol, echo=FALSE}  
+  doPlot(reds,reds$alcohol, "Alcohol")
+```
+  
+
+
+#### Correlations of individual properties w/ quality
+
+As a final step in our univariate analysis, let's look at how strongly each property is correlated to wine quality:
+
+
+```{r quality_correlation_reds, echo=FALSE}
+quality <- cor(reds[2:13])[12,]
+quality
+
+```
+
+This shows the strongest positive correlation to alcohol content, and the strongest negative correlation to volatile acidity, which makes sense.  
+
+Other factors with relatively high correlations to quality (+ or -) are sulphates and citric acid.
+
+
+### Multivariate Analysis
+
+Now that we have looked all of the properties individually and inspected how they vary in the different quality bins, it's time to look at how the different combinations of qualities might affect the quality of a wine.
+
+#### Correlation heatmap of properties
+
+The first thing that popped out at me is that many of these properties are related, just because of chemistry.  So, I did a correlation heatplot to find variables that are not completely independent.
+   
+Here it is:
+
+```{r correlations_reds, echo=FALSE}
+ggcorrplot(cor(reds[2:13]), hc.order = TRUE, outline.col = "white", type = "lower", lab=TRUE)
+```
+
+Some things to notice here:
+
+   * Fixed acidity and pH appear to be related, likewise, citric acid and pH. (Chemistry!)
+   * As I speculated above, free sulfur dioxide and total sulfur dioxide are related.  Again, probably Chemistry at work.
+   * Density is inversely related to alcohol content as you would expect since alcohol is less dense than water.  It is also related to fixed acidity, but I'm not sure that's a causal relationship.
+
+So, the conclusion here is that many of the properties give redundant information.  Maybe we can decrease the dimensionality somehow.
+
+Note: I'm sorry the graph is so scrunched in the PDF.  It looks great on a large monitor.
+
+#### Scatterplot matrix
+
+The next step is do do a scatterplot matrix and see the relationships between each  
+
+```{r scatterplot_matrix_reds, echo=FALSE}
+  scatterplotMatrix(reds[2:12])
+```
+
+Again, this is OK on a larger monitor but pretty terrible in PDF, so I've broken out the diagonal pieces: 
+
+
+```{r scatterplot_matrix_reds_better, echo=FALSE}
+  scatterplotMatrix(reds[2:7])
+  scatterplotMatrix(reds[8:13])
+```
+
+Not sure if there's a good way to blow up the off-diagonal part of the matrix, please advise!
+
+Anyhow, this doesn't show us too much more than we saw in the heatmap. Along the diagonal you can see that the distribution of most of the properties is roughly normal (Gaussian).  Citric acid is a notable exception.
+
+This may affect the ways we choose to analyze the data.
+
+### PCA for red wine
+
+Since most of the properties are normally distributed, I decided to try a principal components analysis to reduce the dimensionality of the wine dataset.
+
+I got some code from the interwebs for this one (can't find the exact reference).
+
+But the code and results seem reasonable, so here goes
+
+The first step is to rescale the data (standardize range and stdev), then run the PCA.
+
+```{r pca_for_red}
+  wine <- reds
+
+  s <- as.data.frame(scale(wine[2:12]))
+  wine.pca <- prcomp(s) 
+```
+
+Here is a summary of the results:
+
+```{r pca_for_red2}
+  summary(wine.pca)
+```
+
+And a screeplot, which shows the amount how much of the variance each of the new components accounts for. 
+
+```{r pca_for_red3}
+  screeplot(wine.pca, type="lines")
+```
+
+There isn't a real cutoff in the screeplot, but it is clear that the first 4-5 principal account for most of the variance. So let's have a look at them.
+
+#### First princical axis
+
+The first PA seems to relate to general acidity.  It has a weakly positive relationship to quality.
+
+```{r first_pa}
+  wine.pca$rotation[,1]
+  first_pa <- wine.pca$x[, 1]
+  scatterplot(first_pa ~ wine$quality, 
+              xlab="Wine quality", 
+              ylab="First PA", 
+              main="Wine quality vs first PA (axis of acidity)", 
+              labels=row.names(wine))
+  lm(first_pa~wine$quality)
+```
+
+#### Second princical axis
+
+The second PA has high sulfur dioxide, high volatile acids and low alcohol (yuk).  It falls off substantially in the higher-quality wines.
+
+```{r second_pa}
+  wine.pca$rotation[,2]
+  second_pa <- wine.pca$x[, 2]
+  scatterplot(second_pa ~ wine$quality, 
+  	          xlab="Wine quality", 
+              ylab="Second PA", 
+              main="Wine quality vs second PA (axis of funk)", 
+              labels=row.names(wine))
+  lm(second_pa~wine$quality)
+```
+  
+#### Third princical axis
+
+The third PA is characterized by high volatile acidity and low alcohol. It also has low sulfur dioxide, although the meaning of this is less clear.  It is inversely related to wine quality. Basically, vinegar.
+
+```{r third_pa}  
+  third_pa <- wine.pca$x[, 3]
+  wine.pca$rotation[,3]
+  lm(third_pa~wine$quality)
+  scatterplot(third_pa ~ wine$quality, 
+  	          xlab="Wine quality", 
+              ylab="Third PA ", 
+              main="Wine quality vs third PA (axis of vinegar)")
+```
+
+#### Fourth princical axis
+
+The fourth PA is very boring. Nothing strongly in the mix and no noticeble effect on quality.
+
+```{r fourth_pa}  
+  fourth_pa <- wine.pca$x[, 4]
+  wine.pca$rotation[,4]
+ 
+  scatterplot(fourth_pa ~ wine$quality, 
+  	          xlab="Wine quality", 
+              ylab="Fourth PA ", 
+              main="Wine quality vs fourth PA (axis of nothingburger)")
+  lm(fourth_pa~wine$quality)
+```
+
+#### Fifth princical axis
+
+We'll look at one more PA.  This one seems to be characterized mostly by a lack of residual sugar, and, again, the effect on quality is minor.
+
+```{r fifth_pa} 
+  fifth_pa <- wine.pca$x[, 4]
+  wine.pca$rotation[,5]
+
+
+  scatterplot(fifth_pa ~ wine$quality, 
+  	          xlab="Wine quality", 
+              ylab="Fifth PA ", 
+              main="Wine quality vs fifth PA (axis of dryness)")
+  lm(fifth_pa~wine$quality)
+```
+
+
+
+### LDA for red wine
+
+Next is an linear discriminant analysis for the wine data. It should show the main axis that determines quality as a function of all the other properties.
+
+It looks like the LD1 accounts for most of the quality variation, but the scatterplot shows that there is too much overlap in the distributions to be able to reliably sort out any but the highest and lowest quality wines. 
+
+Although there is overlap in the distributiosn, this does look like a reasonable measure of quality.
+
+One problem: there seems to be an anomaly in the density. Perhaps it scaled badly, being so close to 1?
+
+```{r lda_for_red}
+  wine <- reds
+  library('MASS')
+
+  s <- as.data.frame(scale(wine[2:12]))
+  wine.lda <-
+  lda(wine$quality ~ wine$fixed.acidity + wine$volatile.acidity+     wine$citric.acid + wine$residual.sugar + wine$chlorides + wine$free.sulfur.dioxide + wine$total.sulfur.dioxide + wine$density + wine$pH + wine$sulphates + wine$alcohol)
+  wine.lda
+
+# Do a prediction
+  wine.lda.values <- predict(wine.lda, s$quality)
+  first_lda <- wine.lda.values$x[,1]
+  scatterplot(wine$quality, wine.lda.values$x[,1])
+  # ldahist(data = wine.lda.values$x[,1], g=wine$quality)
+
+```
+
+
+## Final Plots and Summary
+
+In the end, if the PCA analysis has some validity, you can see that two of the principal differences in wine were less important in determining quality: the general acidity and the residual sugar. But two others (PA2 and PA3) seem to be signatures of problems in winemaking. PA3, with its high volatile acidity and low alcohol,is probably wine going to vineagar.  PQ2 has some volatile acidity and low alcohol, but is mainly distinguished by a high total sulful dioxice.  This can also lend an off-taste to wine.
+
+Here is a useful summary of wine faults:
+https://wine.appstate.edu/sites/wine.appstate.edu/files/Chart%20Aromas%20FH_0.pdf
+
+Note: I didn't follow the instructions of presenting exploratory analysis.  No, I didn't read it in time and pretty much did the whole thing as a formal report.  So, the whole thing up till now is "final plots and summary."  
+
+This was way more work, but bf I need to do a formal summary, please let me know.
+
+## Reflection
+
+Tolstoy said that all happy families are alike, but each unhappy family is unhappy in its own way.  Perhaps not true for families, but true enough for wine, at least for the wine in the top bins vs. the wines in the middle and lower bins.
+
+What distinguishes the higher quality wine is the absense wine faults.  It is fairly easy to distinguish the best wine from the others by the absense of these faults.  PCS/LCA analysis shows some possible combinations of features that could be a signature of wine faults, but of course it's just exploratory.  
+
+As far as the wines in the middle quality bins  (that is, the overwhelming majority of the wine samples), the picture becomes more hazy because there are many types of wine fault, so wines can be less-than-perfect in many different ways, in different degrees and different combinations.  I'm not sure if the mid-quality wines are blended, in which case, you'd expect wines with a complementary faults to be mixed together, which would muddy the water still more.
+
+Anyhow, nice project, more fun than I thought.
+
+
+
